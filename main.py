@@ -1,9 +1,8 @@
 import os
 import json
-import asyncio
 import threading
 from http.server import SimpleHTTPRequestHandler, HTTPServer
-from pyrogram import Client, filters, idle # idle ইমপোর্ট করা হলো
+from pyrogram import Client, filters
 from pyrogram.types import Message
 from google.cloud import firestore
 from google.oauth2 import service_account
@@ -32,13 +31,10 @@ API_HASH = os.environ.get("API_HASH", "your_api_hash")
 SESSION_STRING = os.environ.get("USER_SESSION", "") 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "") 
 
-SOURCE_CHANNEL = int(os.environ.get("SOURCE_CHANNEL", -1003962440092)) 
+SOURCE_CHANNEL = int(os.environ.get("SOURCE_CHANNEL", -1003962440092)) # আপনার মূল প্রধান লগ চ্যানেল আইডি
 
-# ২. এনভায়রনমেন্ট ভেরিয়েবল "BACKUP_CHANNELS" রিড করার ডাইনামিক পার্সার
-backup_channels_env = os.environ.get("BACKUP_CHANNELS")
-if not backup_channels_env:
-    backup_channels_env = os.environ.get("BACKUP_CHANNALS", "") 
-
+# ২. এনভায়রনমেন্ট ভেরিয়েবল "BACKUP_CHANNELS" থেকে আইডি রিড করার ডাইনামিক পার্সার
+backup_channels_env = os.environ.get("BACKUP_CHANNELS", "")
 BACKUP_CHANNELS = []
 if backup_channels_env:
     for x in backup_channels_env.split(","):
@@ -60,29 +56,11 @@ if creds_json:
         creds_dict = json.loads(creds_json)
         creds = service_account.Credentials.from_service_account_info(creds_dict)
         db = firestore.Client(credentials=creds)
-        print("Successfully connected to Firebase Firestore from Python!")
+        print("Successfully connected to Firebase Firestore!")
     except Exception as e:
-        print(f"Failed to initialize Firestore in Python: {e}")
+        print(f"Failed to initialize Firestore: {e}")
 else:
     print("Warning: FIREBASE_CREDENTIALS environment variable is empty. DB mapping is disabled.")
-
-# ফাইলের সাইজ ফরম্যাটিং হেল্পার ফাংশন
-def format_size(bytes_size):
-    try:
-        bytes_size = int(bytes_size)
-    except:
-        return "Unknown"
-    const_unit = 1024
-    if bytes_size < const_unit:
-        return f"{bytes_size} B"
-    div, exp = const_unit, 0
-    n = bytes_size // const_unit
-    while n >= const_unit:
-        div *= const_unit
-        exp += 1
-        n //= const_unit
-    units = "KMGTPE"
-    return f"{bytes_size / div:.2f} {units[exp]}B"
 
 # ৪. ক্লায়েন্ট সেটআপ
 if SESSION_STRING:
@@ -93,88 +71,31 @@ else:
 # ৫. নতুন মেসেজ মনিটরিং এবং ফায়ারবেস ম্যাপিং হ্যান্ডলার
 @app.on_message(filters.chat(SOURCE_CHANNEL))
 async def mirror_messages(client, message: Message):
-    if not message.media:
-        return
-
-    # Go বটকে ফায়ারবেসে ডেটা সেভ করার জন্য ২ সেকেন্ড সময় দেওয়া হচ্ছে (Race Condition এড়াতে)
-    await asyncio.sleep(2.0)
-
     backup_mappings = {}
-    custom_caption = ""
 
-    # ফায়ারবেস থেকে স্ট্রিমিং লিংক ও অন্যান্য তথ্য তুলে নিয়ে ক্যাপশন সাজানো হচ্ছে
-    if db:
-        try:
-            docs = db.collection("files").where("main_msg_id", "==", message.id).limit(1).stream()
-            for doc in docs:
-                data = doc.to_dict()
-                file_name = data.get("file_name", "Unknown")
-                size_bytes = data.get("size", 0)
-                link = data.get("link", "")
-                file_id = data.get("file_id", "N/A")
-                date_str = data.get("date", "")
-
-                # ভিডিও বা অডিওর Duration বের করার লজিক
-                duration = "N/A"
-                if message.video:
-                    dur_seconds = message.video.duration
-                    mins = dur_seconds // 60
-                    secs = dur_seconds % 60
-                    duration = f"{mins:02d}:{secs:02d} Min"
-                elif message.audio:
-                    dur_seconds = message.audio.duration
-                    mins = dur_seconds // 60
-                    secs = dur_seconds % 60
-                    duration = f"{mins:02d}:{secs:02d} Min"
-
-                # তারিখ ফরম্যাটিং
-                try:
-                    from datetime import datetime
-                    dt = datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%SZ")
-                    upload_time = dt.strftime("%d-%b-%Y %I:%M %p")
-                except:
-                    upload_time = "N/A"
-
-                formatted_size = format_size(size_bytes)
-
-                # ফায়ারবেস ডেটা ব্যবহার করে হুবহু অরিজিনাল সুন্দর ক্যাপশন কার্ড তৈরি
-                custom_caption = f"""📂 File Information
-━━━━━━━━━━━━━━━━━━━━━━
-📝 Name: {file_name}
-📦 Size: {formatted_size}
-⏱ Duration: {duration}
-🆔 File ID: {file_id}
-📅 Date: {upload_time}
-━━━━━━━━━━━━━━━━━━━━━━
-⚡ Streaming & Download Links:
-🔗 Stream: {link}
-📥 Download: {link}&d=true"""
-        except Exception as e:
-            print(f"Error reading Firestore: {e}")
-
-    # প্রতিটি ব্যাকআপ চ্যানেলে ফাইলের ক্যাপশন হিসেবে সম্পূর্ণ ডিটেইলস কার্ডটি সরাসরি যুক্ত করে কপি করা হচ্ছে
+    # প্রথমে ব্যাকআপ চ্যানেলগুলোতে ফরোয়ার্ড ট্যাগ ছাড়া হুবহু ফাইল ও বাটন কপি করা হচ্ছে
     for target in BACKUP_CHANNELS:
         try:
-            if custom_caption:
-                # copy মেথডে caption প্যারামিটার ব্যবহার করে ফাইলের ভেতরেই ক্যাপশন সেট করা হলো
-                copied_msg = await message.copy(target, caption=custom_caption)
-            else:
-                copied_msg = await message.copy(target)
-            
+            copied_msg = await message.copy(target)
             backup_mappings[str(target)] = copied_msg.id
-            print(f"Copied file to backup channel {target} with united caption!")
+            print(f"Copied message {message.id} to backup channel {target} (New Msg ID: {copied_msg.id})")
         except Exception as e:
-            print(f"Failed to copy file to {target}: {e}")
+            print(f"Failed to copy message {message.id} to backup channel {target}: {e}")
 
-    # ফায়ারবেস ডকুমেন্টে নতুন ব্যাকআপ আইডি ম্যাপিং আপডেট করা হচ্ছে
+    # কপি সফল হলে ফায়ারবেসে ব্যাকআপ ম্যাপিং আপডেট করা হচ্ছে
     if db and len(backup_mappings) > 0:
         try:
             docs = db.collection("files").where("main_msg_id", "==", message.id).limit(1).stream()
+            updated = False
             for doc in docs:
                 doc.reference.update({
                     "backup_mappings": backup_mappings
                 })
                 print(f"Successfully mapped backup IDs in Firestore for main_msg_id {message.id}!")
+                updated = True
+            
+            if not updated:
+                print(f"Firestore warning: No document found with main_msg_id {message.id}")
         except Exception as e:
             print(f"Error updating Firestore backup mappings: {e}")
 
@@ -188,11 +109,13 @@ async def on_deleted_messages(client, messages):
 
         if db:
             try:
+                # Firestore থেকে মেইন মেসেজ আইডি কুয়েরি করে ওই মুভি ডকুমেন্টটি বের করা হচ্ছে
                 docs = db.collection("files").where("main_msg_id", "==", deleted_msg_id).limit(1).stream()
                 for doc in docs:
                     data = doc.to_dict()
                     backup_mappings = data.get("backup_mappings", {})
                     
+                    # প্রতিটি ব্যাকআপ চ্যানেল থেকে মেসেজগুলো স্বয়ংক্রিয়ভাবে মুছে দেওয়া হচ্ছে
                     for ch_id_str, b_msg_id in backup_mappings.items():
                         ch_id = int(ch_id_str)
                         try:
@@ -201,25 +124,11 @@ async def on_deleted_messages(client, messages):
                         except Exception as e:
                             print(f"Failed to delete mirrored message in backup channel {ch_id}: {e}")
                     
+                    # সবশেষে ফায়ারবেস ডাটাবেস থেকেও ডকুমেন্টটি রিমুভ করা হলো
                     doc.reference.delete()
                     print(f"Successfully deleted Firestore document for main_msg_id {deleted_msg_id}")
             except Exception as e:
                 print(f"Error handling deleted messages in Firestore: {e}")
 
-
-# ━━━ স্টার্টআপ মেথড (অটো-চ্যানেল রেজোলভার) ━━━
-async def main():
-    await app.start()
-    print("Auto-Resolver: Fetching dialogs to automatically cache channel access hashes...")
-    try:
-        # বটের অ্যাডমিন থাকা সকল সচল চ্যানেল স্বয়ংক্রিয়ভাবে ক্যাশ করার লুপ
-        async for dialog in app.get_dialogs():
-            print(f"Auto-Resolver resolved: {dialog.chat.title} ({dialog.chat.id})")
-    except Exception as e:
-        print(f"Auto-Resolver Warning: {e}")
-    print("Auto-Resolver: Successfully resolved and cached all active channels! Listening for new messages...")
-    await idle()
-    await app.stop()
-
-if __name__ == "__main__":
-    app.run(main())
+print("Dynamic Channel Mirroring CDN Bot is fully active!")
+app.run()
