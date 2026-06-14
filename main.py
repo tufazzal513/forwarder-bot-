@@ -32,9 +32,10 @@ API_HASH = os.environ.get("API_HASH", "your_api_hash")
 SESSION_STRING = os.environ.get("USER_SESSION", "") 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "") 
 
-SOURCE_CHANNEL = int(os.environ.get("SOURCE_CHANNEL", -1003962440092)) 
+# রেন্ডার এনভায়রনমেন্ট ভেরিয়েবল "MAIN_CHANNEL" থেকে মেইন লগ চ্যানেল আইডি রিড করা হচ্ছে
+MAIN_CHANNEL = int(os.environ.get("MAIN_CHANNEL", os.environ.get("SOURCE_CHANNEL", -1003962440092)))
 
-# ২. এনভায়রনমেন্ট ভেরিয়েবল "BACKUP_CHANNELS" রিড করার ডাইনামিক পার্সার
+# ২. রেন্ডার এনভায়রনমেন্ট ভেরিয়েবল "BACKUP_CHANNELS" থেকে আইডি রিড করার ডাইনামিক পার্সার
 backup_channels_env = os.environ.get("BACKUP_CHANNELS")
 if not backup_channels_env:
     backup_channels_env = os.environ.get("BACKUP_CHANNALS", "") 
@@ -49,7 +50,7 @@ if backup_channels_env:
             except ValueError:
                 print(f"Warning: Failed to parse backup channel ID '{x}' as integer")
 
-print(f"Loaded SOURCE_CHANNEL: {SOURCE_CHANNEL}")
+print(f"Loaded MAIN_CHANNEL: {MAIN_CHANNEL}")
 print(f"Loaded BACKUP_CHANNELS: {BACKUP_CHANNELS}")
 
 # ৩. ফায়ারবেস ক্লাউড ফায়ারস্টোর ইনিশিয়ালাইজেশন
@@ -91,7 +92,7 @@ else:
     app = Client("mirror_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 # ৫. নতুন মেসেজ মনিটরিং এবং ফায়ারবেস ম্যাপিং হ্যান্ডলার
-@app.on_message(filters.chat(SOURCE_CHANNEL))
+@app.on_message(filters.chat(MAIN_CHANNEL))
 async def mirror_messages(client, message: Message):
     # যদি মেসেজটি সাধারণ টেক্সট হয় (যেমন বটের আলাদা টেক্সট ক্যাপশন), তবে মেইন চ্যানেল ক্লিন রাখতে সেটি ডিলিট করে দেওয়া হবে
     if not message.media:
@@ -161,7 +162,7 @@ async def mirror_messages(client, message: Message):
     # প্রতিটি ব্যাকআপ চ্যানেলে ফাইলের ক্যাপশন হিসেবে সম্পূর্ণ ডিটেইলস কার্ডটি সরাসরি যুক্ত করে কপি করা হচ্ছে
     for target in BACKUP_CHANNELS:
         # ডুপ্লিকেট ফরোয়ার্ড এড়াতে ব্যাকআপ আইডি যদি মেইন চ্যানেলের আইডি হয়, তবে স্কিপ করা হবে
-        if target == SOURCE_CHANNEL:
+        if target == MAIN_CHANNEL:
             continue
             
         try:
@@ -190,7 +191,7 @@ async def mirror_messages(client, message: Message):
 
 
 # ৬. মূল চ্যানেল থেকে মেসেজ ডিলিট হওয়া মাত্রই তা ব্যাকআপ চ্যানেল ও ডাটাবেস থেকে ডিলিট করার লজিক
-@app.on_deleted_messages(filters.chat(SOURCE_CHANNEL))
+@app.on_deleted_messages(filters.chat(MAIN_CHANNEL))
 async def on_deleted_messages(client, messages):
     for message in messages:
         deleted_msg_id = message.id
