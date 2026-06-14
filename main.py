@@ -3,7 +3,7 @@ import json
 import asyncio
 import threading
 from http.server import SimpleHTTPRequestHandler, HTTPServer
-from pyrogram import Client, filters
+from pyrogram import Client, filters, idle # idle ইমপোর্ট করা হলো
 from pyrogram.types import Message
 from google.cloud import firestore
 from google.oauth2 import service_account
@@ -34,10 +34,10 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 
 SOURCE_CHANNEL = int(os.environ.get("SOURCE_CHANNEL", -1003962440092)) 
 
-# ২. এনভায়রনমেন্ট ভেরিয়েবল থেকে আইডি রিড করার ডাইনামিক পার্সার (উভয় বানানই সাপোর্ট করবে)
+# ২. এনভায়রনমেন্ট ভেরিয়েবল "BACKUP_CHANNELS" রিড করার ডাইনামিক পার্সার
 backup_channels_env = os.environ.get("BACKUP_CHANNELS")
 if not backup_channels_env:
-    backup_channels_env = os.environ.get("BACKUP_CHANNALS", "") # ভুল বানান থাকলেও ব্যাকআপ হিসেবে রিড করবে
+    backup_channels_env = os.environ.get("BACKUP_CHANNALS", "") 
 
 BACKUP_CHANNELS = []
 if backup_channels_env:
@@ -54,7 +54,7 @@ print(f"Loaded BACKUP_CHANNELS: {BACKUP_CHANNELS}")
 
 # ৩. ফায়ারবেস ক্লাউড ফায়ারস্টোর ইনিশিয়ালাইজেশন
 db = None
-creds_json = os.Getenv("FIREBASE_CREDENTIALS") if hasattr(os, "Getenv") else os.environ.get("FIREBASE_CREDENTIALS")
+creds_json = os.environ.get("FIREBASE_CREDENTIALS")
 if creds_json:
     try:
         creds_dict = json.loads(creds_json)
@@ -66,7 +66,7 @@ if creds_json:
 else:
     print("Warning: FIREBASE_CREDENTIALS environment variable is empty. DB mapping is disabled.")
 
-# ফাইলের সাইজ ফরম্যাটিং হেল্পার ফাংশন (টাইপ সেফ)
+# ফাইলের সাইজ ফরম্যাটিং হেল্পার ফাংশন
 def format_size(bytes_size):
     try:
         bytes_size = int(bytes_size)
@@ -93,7 +93,6 @@ else:
 # ৫. নতুন মেসেজ মনিটরিং এবং ফায়ারবেস ম্যাপিং হ্যান্ডলার
 @app.on_message(filters.chat(SOURCE_CHANNEL))
 async def mirror_messages(client, message: Message):
-    # যদি মেসেজটি সাধারণ টেক্সট হয় (যেমন: মেইন চ্যানেলে আসা বটের আলাদা ক্যাপশন মেসেজ), তবে তা স্কিপ করবে
     if not message.media:
         return
 
@@ -207,5 +206,20 @@ async def on_deleted_messages(client, messages):
             except Exception as e:
                 print(f"Error handling deleted messages in Firestore: {e}")
 
-print("Dynamic Channel Mirroring CDN Bot is fully active!")
-app.run()
+
+# ━━━ স্টার্টআপ মেথড (অটো-চ্যানেল রেজোলভার) ━━━
+async def main():
+    await app.start()
+    print("Auto-Resolver: Fetching dialogs to automatically cache channel access hashes...")
+    try:
+        # বটের অ্যাডমিন থাকা সকল সচল চ্যানেল স্বয়ংক্রিয়ভাবে ক্যাশ করার লুপ
+        async for dialog in app.get_dialogs():
+            print(f"Auto-Resolver resolved: {dialog.chat.title} ({dialog.chat.id})")
+    except Exception as e:
+        print(f"Auto-Resolver Warning: {e}")
+    print("Auto-Resolver: Successfully resolved and cached all active channels! Listening for new messages...")
+    await idle()
+    await app.stop()
+
+if __name__ == "__main__":
+    app.run(main())
