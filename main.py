@@ -1,16 +1,37 @@
 import os
 import json
+import threading
+from http.server import SimpleHTTPRequestHandler, HTTPServer
 from pyrogram import Client, filters
 from pyrogram.types import Message
 from google.cloud import firestore
 from google.oauth2 import service_account
 
-# ১. টেলিগ্রাম এপিআই ও চ্যানেল কনফিগারেশন
-API_ID = int(os.environ.get("API_ID", 1234567)) # আপনার Telegram API ID দিন
-API_HASH = os.environ.get("API_HASH", "your_api_hash") # আপনার API Hash দিন
+# ━━━━ Render Free Tier Port Binding Workaround ━━━━
+# Render-এর ফ্রি টিয়ারে বট সচল রাখতে পোর্ট বাইন্ড করা অত্যন্ত জরুরি।
+class HealthCheckHandler(SimpleHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/html')
+        self.end_headers()
+        self.wfile.write(b"Mirror Bot is Alive and Running!")
 
-SESSION_STRING = os.environ.get("USER_SESSION", "") # সেশন স্ট্রিং দিলে সবচেয়ে ভালো কাজ করবে
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "") # সেশন না থাকলে বটের টোকেন দিয়েও চলবে
+def run_health_check_server():
+    port = int(os.environ.get("PORT", 8080))
+    server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
+    print(f"Health Check Server running on port {port}")
+    server.serve_forever()
+
+# ব্যাকগ্রাউন্ড থ্রেডে সার্ভারটি চালু করা হচ্ছে
+threading.Thread(target=run_health_check_server, daemon=True).start()
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# ১. টেলিগ্রাম এপিআই ও চ্যানেল কনফিগারেশন
+API_ID = int(os.environ.get("API_ID", 1234567)) 
+API_HASH = os.environ.get("API_HASH", "your_api_hash")
+
+SESSION_STRING = os.environ.get("USER_SESSION", "") 
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "") 
 
 SOURCE_CHANNEL = -1003962440092 # আপনার মূল মেইন লগ চ্যানেল আইডি
 BACKUP_CHANNELS = [-1003984468691, -1003980607861] # আপনার ব্যাকআপ চ্যানেলগুলোর আইডি
