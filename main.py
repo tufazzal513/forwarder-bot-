@@ -34,8 +34,11 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 
 SOURCE_CHANNEL = int(os.environ.get("SOURCE_CHANNEL", -1003962440092)) 
 
-# ২. এনভায়রনমেন্ট ভেরিয়েবল "BACKUP_CHANNELS" রিড করার ডাইনামিক পার্সার
-backup_channels_env = os.environ.get("BACKUP_CHANNELS", "")
+# ২. এনভায়রনমেন্ট ভেরিয়েবল থেকে আইডি রিড করার ডাইনামিক পার্সার (উভয় বানানই সাপোর্ট করবে)
+backup_channels_env = os.environ.get("BACKUP_CHANNELS")
+if not backup_channels_env:
+    backup_channels_env = os.environ.get("BACKUP_CHANNALS", "") # ভুল বানান থাকলেও ব্যাকআপ হিসেবে রিড করবে
+
 BACKUP_CHANNELS = []
 if backup_channels_env:
     for x in backup_channels_env.split(","):
@@ -51,7 +54,7 @@ print(f"Loaded BACKUP_CHANNELS: {BACKUP_CHANNELS}")
 
 # ৩. ফায়ারবেস ক্লাউড ফায়ারস্টোর ইনিশিয়ালাইজেশন
 db = None
-creds_json = os.environ.get("FIREBASE_CREDENTIALS")
+creds_json = os.Getenv("FIREBASE_CREDENTIALS") if hasattr(os, "Getenv") else os.environ.get("FIREBASE_CREDENTIALS")
 if creds_json:
     try:
         creds_dict = json.loads(creds_json)
@@ -63,8 +66,12 @@ if creds_json:
 else:
     print("Warning: FIREBASE_CREDENTIALS environment variable is empty. DB mapping is disabled.")
 
-# ফাইলের সাইজ ফরম্যাটিং হেল্পার ফাংশন
+# ফাইলের সাইজ ফরম্যাটিং হেল্পার ফাংশন (টাইপ সেফ)
 def format_size(bytes_size):
+    try:
+        bytes_size = int(bytes_size)
+    except:
+        return "Unknown"
     const_unit = 1024
     if bytes_size < const_unit:
         return f"{bytes_size} B"
