@@ -1,3 +1,2 @@
-pyrogram
-tgcrypto
-google-cloud-firestore
+python-telegram-bot
+aiohttp
